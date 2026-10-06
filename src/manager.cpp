@@ -21,6 +21,9 @@
 HTManager::HTManager() {
     swipe_state = HT_SWIPE_NONE;
     swipe_amt = 0.0;
+    swipe_avg_speed = 0.0f;
+    swipe_speed_points = 0;
+    swipe_opening = false;
 }
 
 PHTVIEW HTManager::get_view_from_monitor(PHLMONITOR monitor) {
@@ -121,6 +124,9 @@ void HTManager::show_cursor_view() {
 void HTManager::reset() {
     swipe_state = HT_SWIPE_NONE;
     swipe_amt = 0.0;
+    swipe_avg_speed = 0.0f;
+    swipe_speed_points = 0;
+    swipe_opening = false;
     jump_pressed_keys.clear();
     views.clear();
 }

@@ -178,6 +178,8 @@ hl.config({
         open_fingers = 4,
         open_distance = 300,
         open_positive = true,
+        open_threshold = 0.5,
+        open_min_speed_to_force = 0.0,
       },
 
       grid = {
@@ -254,6 +256,8 @@ plugin {
             open_fingers = 4
             open_distance = 300
             open_positive = true
+            open_threshold = 0.5
+            open_min_speed_to_force = 0.0
         }
 
         grid {
@@ -340,6 +344,8 @@ All options are prefixed with `plugin:hyprtasking:`.
 | `gestures:open_fingers` | `int` | The number of fingers to use for the "open" gesture | `4` |
 | `gestures:open_distance` | `float` | How large of a swipe on the touchpad is needed for the "open" gesture | `300.f` |
 | `gestures:open_positive` | `int` | `true` if swiping up should open the overlay, `false` otherwise | `true` |
+| `gestures:open_threshold` | `float` | How much of the swipe distance must be completed to trigger open/close (0.0 - 1.0) | `0.5f` |
+| `gestures:open_min_speed_to_force` | `float` | Minimum speed (in px per event) to force open/close ignoring threshold (0 to disable) | `0.f` |
 | `grid:rows` | `int` | The number of rows to display on the grid overlay | `3` |
 | `grid:cols` | `int` | The number of columns to display on the grid overlay | `3` |
 | `grid:loop` | `int` | When enabled, moving right at the far right of the grid will wrap around to the leftmost workspace, etc. | `false` |

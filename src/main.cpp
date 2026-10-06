@@ -786,6 +786,8 @@ static void init_config() {
     addConfigValue(CIntValue, "gestures:open_fingers", "open fingers", 4);
     addConfigValue(CFloatValue, "gestures:open_distance", "open distance", 300.0);
     addConfigValue(CIntValue, "gestures:open_positive", "open positive", 1);
+    addConfigValue(CFloatValue, "gestures:open_threshold", "open threshold", 0.5);
+    addConfigValue(CFloatValue, "gestures:open_min_speed_to_force", "open min speed to force", 0.0);
 
     // grid specific
     addConfigValue(CIntValue, "grid:rows", "rows", 3);

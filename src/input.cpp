@@ -284,6 +284,9 @@ bool HTManager::on_mouse_axis(double delta) {
 void HTManager::swipe_start() {
     swipe_state = HT_SWIPE_NONE;
     swipe_amt = 0.0;
+    swipe_avg_speed = 0.0f;
+    swipe_speed_points = 0;
+    swipe_opening = false;
 }
 
 bool HTManager::swipe_update(IPointer::SSwipeUpdateEvent e) {
@@ -298,7 +301,8 @@ bool HTManager::swipe_update(IPointer::SSwipeUpdateEvent e) {
         return false;
 
     const unsigned int MOVE_FINGERS = HTConfig::value<Config::INTEGER>("gestures:move_fingers");
-    const float OPEN_DISTANCE = HTConfig::value<Config::FLOAT>("gestures:open_distance");
+    const float OPEN_DISTANCE =
+        std::max(1.0f, HTConfig::value<Config::FLOAT>("gestures:open_distance"));
     const unsigned int OPEN_FINGERS = HTConfig::value<Config::INTEGER>("gestures:open_fingers");
     const int OPEN_POSITIVE = HTConfig::value<Config::INTEGER>("gestures:open_positive");
 
@@ -323,16 +327,24 @@ bool HTManager::swipe_update(IPointer::SSwipeUpdateEvent e) {
                 cursor_view->show();
                 swipe_state = HT_SWIPE_OPEN;
                 swipe_amt = OPEN_DISTANCE;
+                swipe_opening = true;
+                swipe_speed_points = 0;
+                swipe_avg_speed = 0.0f;
             } else if (cursor_view->active && deltaY > 0) {
-                cursor_view->hide(false);
                 swipe_state = HT_SWIPE_OPEN;
                 swipe_amt = 0.0;
+                swipe_opening = false;
+                swipe_speed_points = 0;
+                swipe_avg_speed = 0.0f;
             }
         }
 
         if (swipe_state == HT_SWIPE_OPEN) {
+            res = true;
             swipe_amt += deltaY;
-            const float swipe_perc = 1.0 - std::clamp(swipe_amt / OPEN_DISTANCE, 0.01f, 1.0f);
+            swipe_speed_points++;
+            swipe_avg_speed = (swipe_avg_speed * (swipe_speed_points - 1) + deltaY) / swipe_speed_points;
+            const float swipe_perc = 1.0f - std::clamp(swipe_amt / OPEN_DISTANCE, 0.0f, 1.0f);
             cursor_view->layout->close_open_lerp(swipe_perc);
         }
     } else if (e.fingers == MOVE_FINGERS) {
@@ -367,9 +379,33 @@ bool HTManager::swipe_end() {
 
     switch (swipe_state) {
         case HT_SWIPE_OPEN: {
-            const float OPEN_DISTANCE = HTConfig::value<Config::FLOAT>("gestures:open_distance");
-            const float swipe_perc = 1.0 - std::clamp(swipe_amt / OPEN_DISTANCE, 0.01f, 1.0f);
-            if (swipe_perc >= 0.5) {
+            const float OPEN_DISTANCE =
+                std::max(1.0f, HTConfig::value<Config::FLOAT>("gestures:open_distance"));
+            const float OPEN_THRESHOLD =
+                std::clamp(HTConfig::value<Config::FLOAT>("gestures:open_threshold"), 0.0f, 1.0f);
+            const float MIN_SPEED = HTConfig::value<Config::FLOAT>("gestures:open_min_speed_to_force");
+            const float swipe_perc = 1.0f - std::clamp(swipe_amt / OPEN_DISTANCE, 0.0f, 1.0f);
+
+            bool should_open = false;
+            if (swipe_opening) {
+                if (MIN_SPEED > 0.0f && -swipe_avg_speed >= MIN_SPEED) {
+                    should_open = true;
+                } else if (MIN_SPEED > 0.0f && swipe_avg_speed >= MIN_SPEED) {
+                    should_open = false;
+                } else {
+                    should_open = (swipe_perc >= OPEN_THRESHOLD);
+                }
+            } else {
+                if (MIN_SPEED > 0.0f && swipe_avg_speed >= MIN_SPEED) {
+                    should_open = false;
+                } else if (MIN_SPEED > 0.0f && -swipe_avg_speed >= MIN_SPEED) {
+                    should_open = true;
+                } else {
+                    should_open = (swipe_perc >= 1.0f - OPEN_THRESHOLD);
+                }
+            }
+
+            if (should_open) {
                 cursor_view->show(false);
             } else {
                 cursor_view->hide(false);
@@ -387,5 +423,8 @@ bool HTManager::swipe_end() {
 
     swipe_state = HT_SWIPE_NONE;
     swipe_amt = 0.0;
+    swipe_avg_speed = 0.0f;
+    swipe_speed_points = 0;
+    swipe_opening = false;
     return true;
 }
