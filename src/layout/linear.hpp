@@ -20,7 +20,7 @@ class HTLayoutLinear: public HTLayoutBase {
 
     virtual CBox calculate_ws_box(int x, int y, HTViewStage stage);
 
-    virtual void close_open_lerp(float perc);
+    virtual void close_open_lerp(float perc, std::optional<WORKSPACEID> target_ws = std::nullopt);
     virtual void on_show(CallbackFun on_complete);
     virtual void on_hide(CallbackFun on_complete);
     virtual void on_move(WORKSPACEID old_id, WORKSPACEID new_id, CallbackFun on_complete);

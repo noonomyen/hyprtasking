@@ -24,6 +24,7 @@ HTManager::HTManager() {
     swipe_avg_speed = 0.0f;
     swipe_speed_points = 0;
     swipe_opening = false;
+    swipe_target_ws = std::nullopt;
 }
 
 PHTVIEW HTManager::get_view_from_monitor(PHLMONITOR monitor) {
@@ -127,6 +128,7 @@ void HTManager::reset() {
     swipe_avg_speed = 0.0f;
     swipe_speed_points = 0;
     swipe_opening = false;
+    swipe_target_ws = std::nullopt;
     jump_pressed_keys.clear();
     views.clear();
 }

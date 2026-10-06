@@ -46,6 +46,7 @@ class HTManager {
     float swipe_avg_speed = 0.0f;
     int swipe_speed_points = 0;
     bool swipe_opening = false;
+    std::optional<WORKSPACEID> swipe_target_ws = std::nullopt;
     std::unordered_set<uint32_t> jump_pressed_keys;
     void swipe_start();
     bool swipe_update(IPointer::SSwipeUpdateEvent e);

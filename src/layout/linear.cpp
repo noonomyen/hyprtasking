@@ -58,7 +58,7 @@ std::string HTLayoutLinear::layout_name() {
     return "linear";
 }
 
-void HTLayoutLinear::close_open_lerp(float perc) {
+void HTLayoutLinear::close_open_lerp(float perc, std::optional<WORKSPACEID> target_ws) {
     const PHLMONITOR monitor = get_monitor();
     if (monitor == nullptr)
         return;

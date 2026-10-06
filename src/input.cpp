@@ -287,6 +287,7 @@ void HTManager::swipe_start() {
     swipe_avg_speed = 0.0f;
     swipe_speed_points = 0;
     swipe_opening = false;
+    swipe_target_ws = std::nullopt;
 }
 
 bool HTManager::swipe_update(IPointer::SSwipeUpdateEvent e) {
@@ -330,12 +331,24 @@ bool HTManager::swipe_update(IPointer::SSwipeUpdateEvent e) {
                 swipe_opening = true;
                 swipe_speed_points = 0;
                 swipe_avg_speed = 0.0f;
+                swipe_target_ws = std::nullopt;
             } else if (cursor_view->active && deltaY > 0) {
                 swipe_state = HT_SWIPE_OPEN;
                 swipe_amt = 0.0;
                 swipe_opening = false;
                 swipe_speed_points = 0;
                 swipe_avg_speed = 0.0f;
+                const int EXIT_ON_HOVERED = HTConfig::value<Config::INTEGER>("exit_on_hovered");
+                if (EXIT_ON_HOVERED) {
+                    const Vector2D mouse_coords = g_pInputManager->getMouseCoordsInternal();
+                    const WORKSPACEID hovered_id = cursor_view->layout->get_ws_id_from_global(mouse_coords);
+                    if (hovered_id != WORKSPACE_INVALID)
+                        swipe_target_ws = hovered_id;
+                    else
+                        swipe_target_ws = std::nullopt;
+                } else {
+                    swipe_target_ws = std::nullopt;
+                }
             }
         }
 
@@ -345,7 +358,7 @@ bool HTManager::swipe_update(IPointer::SSwipeUpdateEvent e) {
             swipe_speed_points++;
             swipe_avg_speed = (swipe_avg_speed * (swipe_speed_points - 1) + deltaY) / swipe_speed_points;
             const float swipe_perc = 1.0f - std::clamp(swipe_amt / OPEN_DISTANCE, 0.0f, 1.0f);
-            cursor_view->layout->close_open_lerp(swipe_perc);
+            cursor_view->layout->close_open_lerp(swipe_perc, swipe_target_ws);
         }
     } else if (e.fingers == MOVE_FINGERS) {
         if (swipe_state == HT_SWIPE_MOVE)
@@ -408,7 +421,7 @@ bool HTManager::swipe_end() {
             if (should_open) {
                 cursor_view->show(false);
             } else {
-                cursor_view->hide(false);
+                cursor_view->hide(false, swipe_target_ws);
             }
             break;
         }
@@ -426,5 +439,6 @@ bool HTManager::swipe_end() {
     swipe_avg_speed = 0.0f;
     swipe_speed_points = 0;
     swipe_opening = false;
+    swipe_target_ws = std::nullopt;
     return true;
 }

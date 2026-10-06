@@ -23,6 +23,7 @@ class HTLayoutGrid: public HTLayoutBase {
     std::unordered_map<long long, WORKSPACEID> slot_ws_cache;
 
     static long long pack_slot(int layer, int x, int y);
+    void set_anim_callback_on_end(CallbackFun on_complete);
 
   public:
     HTLayoutGrid(VIEWID view_id);
@@ -32,7 +33,7 @@ class HTLayoutGrid: public HTLayoutBase {
 
     virtual CBox calculate_ws_box(int x, int y, HTViewStage stage);
 
-    virtual void close_open_lerp(float perc);
+    virtual void close_open_lerp(float perc, std::optional<WORKSPACEID> target_ws = std::nullopt);
     virtual void on_show(CallbackFun on_complete);
     virtual void on_hide(CallbackFun on_complete);
     virtual void on_move(WORKSPACEID old_id, WORKSPACEID new_id, CallbackFun on_complete);

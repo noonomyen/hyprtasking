@@ -22,6 +22,8 @@
 #include <hyprutils/math/Vector2D.hpp>
 #include <hyprutils/utils/ScopeGuard.hpp>
 
+#include <memory>
+
 #include "../config.hpp"
 #include "../globals.hpp"
 #include "../overview.hpp"
@@ -293,10 +295,58 @@ WORKSPACEID HTLayoutGrid::on_move_swipe_end() {
     return closest;
 }
 
-void HTLayoutGrid::close_open_lerp(float perc) {
-    const PHLMONITOR monitor = get_monitor();
-    if (monitor == nullptr)
+// Position of a workspace tile, or the origin if it is not in the current layer.
+// operator[] would insert a bogus default entry instead.
+template<typename Layout>
+static Vector2D tile_pos(const Layout& layout, WORKSPACEID id) {
+    const auto it = layout.find(id);
+    return it == layout.end() ? Vector2D {0, 0} : it->second.box.pos();
+}
+
+void HTLayoutGrid::set_anim_callback_on_end(CallbackFun on_complete) {
+    // Drop callbacks left by a superseded hide/show so they cannot flip view state later.
+    scale->resetAllCallbacks();
+    offset->resetAllCallbacks();
+
+    if (on_complete == nullptr)
         return;
+
+    const bool scale_animating = scale->isBeingAnimated();
+    const bool offset_animating = offset->isBeingAnimated();
+
+    if (!scale_animating && !offset_animating) {
+        on_complete({});
+        return;
+    }
+
+    if (scale_animating && !offset_animating) {
+        scale->setCallbackOnEnd(on_complete);
+        return;
+    }
+
+    if (!scale_animating && offset_animating) {
+        offset->setCallbackOnEnd(on_complete);
+        return;
+    }
+
+    auto counter = std::make_shared<int>(2);
+    auto cb = [counter, on_complete](auto self) {
+        if (--(*counter) == 0) {
+            on_complete(self);
+        }
+    };
+    scale->setCallbackOnEnd(cb);
+    offset->setCallbackOnEnd(cb);
+}
+
+void HTLayoutGrid::close_open_lerp(float perc, std::optional<WORKSPACEID> target_ws) {
+    const PHLMONITOR monitor = get_monitor();
+    if (monitor == nullptr || monitor->m_activeWorkspace == nullptr)
+        return;
+
+    const WORKSPACEID layer_ws = target_ws.value_or(monitor->m_activeWorkspace->m_id);
+    if (const auto sit = ws_slot_cache.find(layer_ws); sit != ws_slot_cache.end())
+        layer = sit->second.layer;
 
     double open_scale =
         calculate_ws_box(0, 0, HT_VIEW_OPENED).w / monitor->m_transformedSize.x; // 1 / ROWS
@@ -304,7 +354,12 @@ void HTLayoutGrid::close_open_lerp(float perc) {
 
     build_overview_layout(HT_VIEW_CLOSED);
     double close_scale = 1.;
-    Vector2D close_pos = -overview_layout[monitor->m_activeWorkspace->m_id].box.pos();
+
+    WORKSPACEID end_ws_id = monitor->m_activeWorkspace->m_id;
+    if (target_ws.has_value() && overview_layout.contains(*target_ws))
+        end_ws_id = *target_ws;
+
+    Vector2D close_pos = -tile_pos(overview_layout, end_ws_id);
 
     double new_scale = std::lerp(close_scale, open_scale, perc);
     Vector2D new_pos = Vector2D {
@@ -319,54 +374,67 @@ void HTLayoutGrid::close_open_lerp(float perc) {
 }
 
 void HTLayoutGrid::on_show(CallbackFun on_complete) {
-    CScopeGuard x([this, &on_complete] {
-        if (on_complete != nullptr)
-            offset->setCallbackOnEnd(on_complete);
-    });
-
     const PHLMONITOR monitor = get_monitor();
-    if (monitor == nullptr)
+    if (monitor == nullptr) {
+        if (on_complete != nullptr)
+            on_complete({});
         return;
+    }
 
     *scale = calculate_ws_box(0, 0, HT_VIEW_OPENED).w / monitor->m_transformedSize.x; // 1 / ROWS
     // Offset for the whole grid of workspaces
     *offset = {0, 0};
+
+    set_anim_callback_on_end(on_complete);
 }
 
 void HTLayoutGrid::on_hide(CallbackFun on_complete) {
-    CScopeGuard x([this, &on_complete] {
-        if (on_complete != nullptr)
-            offset->setCallbackOnEnd(on_complete);
-    });
-
     const PHLMONITOR monitor = get_monitor();
-    if (monitor == nullptr)
+    if (monitor == nullptr) {
+        if (on_complete != nullptr)
+            on_complete({});
         return;
+    }
+
+    if (monitor->m_activeWorkspace == nullptr) {
+        if (on_complete != nullptr)
+            on_complete({});
+        return;
+    }
+
+    const WORKSPACEID end_id = monitor->m_activeWorkspace->m_id;
+    if (const auto sit = ws_slot_cache.find(end_id); sit != ws_slot_cache.end())
+        layer = sit->second.layer;
 
     build_overview_layout(HT_VIEW_CLOSED);
     *scale = 1.;
     // End workspace to end up on
-    *offset = -overview_layout[monitor->m_activeWorkspace->m_id].box.pos();
+    *offset = -tile_pos(overview_layout, end_id);
+
+    set_anim_callback_on_end(on_complete);
 }
 
 void HTLayoutGrid::on_move(WORKSPACEID old_id, WORKSPACEID new_id, CallbackFun on_complete) {
-    CScopeGuard x([this, &on_complete] {
-        if (on_complete != nullptr)
-            offset->setCallbackOnEnd(on_complete);
-    });
-
     const PHTVIEW par_view = ht_manager->get_view_from_id(view_id);
-    if (par_view == nullptr || par_view->active)
+    if (par_view == nullptr || par_view->active) {
+        if (on_complete != nullptr)
+            on_complete({});
         return;
+    }
 
     // prevent the thing from animating
     State::workspaceState()->query().id(old_id).run()->m_renderOffset->warp();
     State::workspaceState()->query().id(new_id).run()->m_renderOffset->warp();
 
+    if (const auto sit = ws_slot_cache.find(new_id); sit != ws_slot_cache.end())
+        layer = sit->second.layer;
+
     build_overview_layout(HT_VIEW_CLOSED);
     *scale = 1.;
     // Target workspace to animate to
-    *offset = -overview_layout[new_id].box.pos();
+    *offset = -tile_pos(overview_layout, new_id);
+
+    set_anim_callback_on_end(on_complete);
 }
 
 bool HTLayoutGrid::should_render_window(PHLWINDOW window) {
