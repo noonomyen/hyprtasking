@@ -73,6 +73,8 @@ void HTLayoutLinear::close_open_lerp(float perc, std::optional<WORKSPACEID> targ
 }
 
 void HTLayoutLinear::on_show(CallbackFun on_complete) {
+    view_offset->resetAllCallbacks();
+
     CScopeGuard x([this, &on_complete] {
         if (on_complete != nullptr)
             view_offset->setCallbackOnEnd(on_complete);
@@ -89,6 +91,8 @@ void HTLayoutLinear::on_show(CallbackFun on_complete) {
 }
 
 void HTLayoutLinear::on_hide(CallbackFun on_complete) {
+    view_offset->resetAllCallbacks();
+
     CScopeGuard x([this, &on_complete] {
         if (on_complete != nullptr)
             view_offset->setCallbackOnEnd(on_complete);

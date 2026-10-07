@@ -87,11 +87,13 @@ void HTView::show(bool recalculate) {
     if (monitor->m_activeSpecialWorkspace)
         monitor->setSpecialWorkspace(nullptr);
 
+    const bool was_closing = closing;
+
     active = true;
     closing = false;
     navigating = false;
 
-    if (recalculate) {
+    if (recalculate && !was_closing) {
         layout->init_position();
     }
     layout->on_show();
@@ -103,6 +105,9 @@ void HTView::show(bool recalculate) {
 }
 
 void HTView::hide(bool exit_on_mouse, std::optional<WORKSPACEID> target_workspace) {
+    if (!active || closing)
+        return;
+
     const PHLMONITOR monitor = get_monitor();
     if (monitor == nullptr)
         return;

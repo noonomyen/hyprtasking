@@ -80,7 +80,8 @@ static SDispatchResult dispatch_if(std::string arg, bool is_active) {
     const PHTVIEW cursor_view = ht_manager->get_view_from_cursor();
     if (cursor_view == nullptr)
         return {.passEvent = true, .success = false, .error = "cursor_view is null"};
-    if (cursor_view->active != is_active) {
+    const bool view_open = cursor_view->active && !cursor_view->closing;
+    if (view_open != is_active) {
         switch (Config::mgr()->type()) {
             // silently exit with no error cuz hyprland
             // does not have support for error silencing on lua side
@@ -190,13 +191,25 @@ DISPATCHER(toggle) {
     if (ht_manager == nullptr)
         return {.success = false, .error = "ht_manager is null"};
 
+    auto is_view_open = [](const PHTVIEW& v) {
+        return v != nullptr && v->active && !v->closing;
+    };
+
     if (arg == "all") {
-        if (ht_manager->has_active_view())
+        bool any_open = false;
+        for (const auto& v : ht_manager->views) {
+            if (is_view_open(v)) {
+                any_open = true;
+                break;
+            }
+        }
+        if (any_open)
             ht_manager->hide_all_views();
         else
             ht_manager->show_all_views();
     } else if (arg == "cursor" || arg == "") {
-        if (ht_manager->cursor_view_active())
+        const PHTVIEW cursor_view = ht_manager->get_view_from_cursor();
+        if (is_view_open(cursor_view))
             ht_manager->hide_all_views();
         else
             ht_manager->show_cursor_view();
