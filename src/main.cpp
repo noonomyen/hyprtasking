@@ -275,7 +275,7 @@ DISPATCHER(killhovered) {
     // Use focused otherwise
     const PHLWINDOW hovered_window = ht_manager->get_window_from_cursor(!cursor_view->active);
     if (hovered_window == nullptr)
-        return {.success = false, .error = "hovered_window is null"};
+        return {};
 
     return wrap(closeWindow(hovered_window));
 }
@@ -741,12 +741,16 @@ static void register_callbacks() {
 }
 
 static int lua_is_active(lua_State* L) {
-    if (ht_manager == nullptr)
-        return luaL_error(L, "%s", "ht_manager is null");
+    if (ht_manager == nullptr) {
+        lua_pushboolean(L, false);
+        return 1;
+    }
     PHTVIEW cursor_view = ht_manager->get_view_from_cursor();
-    if (cursor_view == nullptr)
-        return luaL_error(L, "%s", "cursor_view is null");
-    lua_pushboolean(L, cursor_view->active);
+    if (cursor_view == nullptr) {
+        lua_pushboolean(L, false);
+        return 1;
+    }
+    lua_pushboolean(L, cursor_view->active && !cursor_view->closing);
     return 1;
 }
 
