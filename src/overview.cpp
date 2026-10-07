@@ -84,6 +84,9 @@ void HTView::show(bool recalculate) {
     if (active_workspace == nullptr)
         return;
 
+    if (monitor->m_activeSpecialWorkspace)
+        monitor->setSpecialWorkspace(nullptr);
+
     active = true;
     closing = false;
     navigating = false;
