@@ -316,25 +316,30 @@ bool HTManager::swipe_update(IPointer::SSwipeUpdateEvent e) {
     }
 
     if (e.fingers == OPEN_FINGERS) {
-        if (cursor_view->active || swipe_state == HT_SWIPE_OPEN)
+        const bool view_open = cursor_view->active && !cursor_view->closing;
+        if (view_open || swipe_state == HT_SWIPE_OPEN)
             res = true;
 
         const float deltaY = OPEN_POSITIVE ? e.delta.y : -e.delta.y;
 
         if (swipe_state != HT_SWIPE_OPEN) {
-            if (swipe_direction != 'v' || cursor_view->closing) {
+            if (swipe_direction != 'v') {
                 return res;
-            } else if (!cursor_view->active && deltaY <= 0) {
+            } else if (!view_open && deltaY <= 0) {
+                const bool was_closing = cursor_view->closing;
                 cursor_view->show();
                 swipe_state = HT_SWIPE_OPEN;
-                swipe_amt = OPEN_DISTANCE;
+                const float cur_perc = was_closing ? cursor_view->layout->current_open_perc() : 0.0f;
+                swipe_amt = OPEN_DISTANCE * (1.0f - cur_perc);
                 swipe_opening = true;
                 swipe_speed_points = 0;
                 swipe_avg_speed = 0.0f;
                 swipe_target_ws = std::nullopt;
-            } else if (cursor_view->active && deltaY > 0) {
+            } else if ((view_open || cursor_view->closing) && deltaY > 0) {
+                const bool was_closing = cursor_view->closing;
                 swipe_state = HT_SWIPE_OPEN;
-                swipe_amt = 0.0;
+                const float cur_perc = was_closing ? cursor_view->layout->current_open_perc() : 1.0f;
+                swipe_amt = OPEN_DISTANCE * (1.0f - cur_perc);
                 swipe_opening = false;
                 swipe_speed_points = 0;
                 swipe_avg_speed = 0.0f;

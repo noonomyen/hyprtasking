@@ -12,6 +12,7 @@
 #include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
 #include <hyprland/src/pointer/PointerManager.hpp>
+#include <hyprland/src/pointer/cursor/CursorShapeOverrideController.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/plugins/HookSystem.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
@@ -711,26 +712,28 @@ static void init_functions() {
         fail_exit("Failed initializing hooks");
 }
 
+static std::vector<Hyprutils::Signal::CHyprSignalListener> callback_listeners;
+
 static void register_callbacks() {
-    static auto P1 = Event::bus()->m_events.input.mouse.button.listen(on_mouse_button);
-    static auto P2 = Event::bus()->m_events.input.mouse.move.listen(on_mouse_move);
-    static auto P3 = Event::bus()->m_events.input.mouse.axis.listen(on_mouse_axis);
-    static auto PKEY = Event::bus()->m_events.input.keyboard.key.listen(on_key);
+    callback_listeners.clear();
+    callback_listeners.push_back(Event::bus()->m_events.input.mouse.button.listen(on_mouse_button));
+    callback_listeners.push_back(Event::bus()->m_events.input.mouse.move.listen(on_mouse_move));
+    callback_listeners.push_back(Event::bus()->m_events.input.mouse.axis.listen(on_mouse_axis));
+    callback_listeners.push_back(Event::bus()->m_events.input.keyboard.key.listen(on_key));
 
     // TODO: support touch
-    static auto P4 = Event::bus()->m_events.input.touch.down.listen([&] (ITouch::SDownEvent e, Event::SCallbackInfo i) { cancel_event(i); } );
-    static auto P5 = Event::bus()->m_events.input.touch.up.listen([&] (ITouch::SUpEvent e, Event::SCallbackInfo i) { cancel_event(i); } );
-    static auto P6 = Event::bus()->m_events.input.touch.motion.listen([&] (ITouch::SMotionEvent e, Event::SCallbackInfo i) { cancel_event(i); } );
-    // static auto P7 = Event::bus()->m_events.input.touch.cancel.listen([&] (ITouch::SCancelEvent e, Event::SCallbackInfo i) { cancel_event(i); } );
+    callback_listeners.push_back(Event::bus()->m_events.input.touch.down.listen([&] (ITouch::SDownEvent e, Event::SCallbackInfo i) { cancel_event(i); } ));
+    callback_listeners.push_back(Event::bus()->m_events.input.touch.up.listen([&] (ITouch::SUpEvent e, Event::SCallbackInfo i) { cancel_event(i); } ));
+    callback_listeners.push_back(Event::bus()->m_events.input.touch.motion.listen([&] (ITouch::SMotionEvent e, Event::SCallbackInfo i) { cancel_event(i); } ));
+    // callback_listeners.push_back(Event::bus()->m_events.input.touch.cancel.listen([&] (ITouch::SCancelEvent e, Event::SCallbackInfo i) { cancel_event(i); } ));
 
+    callback_listeners.push_back(Event::bus()->m_events.gesture.swipe.begin.listen(on_swipe_begin));
+    callback_listeners.push_back(Event::bus()->m_events.gesture.swipe.update.listen(on_swipe_update));
+    callback_listeners.push_back(Event::bus()->m_events.gesture.swipe.end.listen(on_swipe_end));
 
-    static auto P7 = Event::bus()->m_events.gesture.swipe.begin.listen(on_swipe_begin);
-    static auto P8 = Event::bus()->m_events.gesture.swipe.update.listen(on_swipe_update);
-    static auto P9 = Event::bus()->m_events.gesture.swipe.end.listen(on_swipe_end);
-
-    static auto P10 = Event::bus()->m_events.config.reloaded.listen(on_config_reloaded);
-    static auto P11 = Event::bus()->m_events.monitor.added.listen(register_monitors);
-    static auto P12 = Event::bus()->m_events.monitor.removed.listen(on_monitor_removed);
+    callback_listeners.push_back(Event::bus()->m_events.config.reloaded.listen(on_config_reloaded));
+    callback_listeners.push_back(Event::bus()->m_events.monitor.added.listen(register_monitors));
+    callback_listeners.push_back(Event::bus()->m_events.monitor.removed.listen(on_monitor_removed));
 }
 
 
@@ -850,7 +853,37 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
 APICALL EXPORT void PLUGIN_EXIT() {
     Log::logger->log(LOG, "[Hyprtasking] Plugin exiting");
-    // prevent crashes
-    ht_manager->hide_all_views();
-    ht_manager->reset();
+
+    callback_listeners.clear();
+
+    if (ht_manager) {
+        for (auto& view : ht_manager->views) {
+            if (view && view->layout) {
+                view->layout->close_open_lerp(0.0f);
+            }
+            if (view) {
+                view->active = false;
+                view->closing = false;
+                view->navigating = false;
+            }
+        }
+        if (Pointer::Cursor::overrideController)
+            Pointer::Cursor::overrideController->unsetOverride(Pointer::Cursor::CURSOR_OVERRIDE_UNKNOWN);
+        ht_manager.reset();
+    }
+
+    auto safe_unhook = [](CFunctionHook*& hook) {
+        if (hook) {
+            hook->unhook();
+            HyprlandAPI::removeFunctionHook(PHANDLE, hook);
+            hook = nullptr;
+        }
+    };
+    safe_unhook(render_workspace_hook);
+    safe_unhook(render_texture_hook);
+    safe_unhook(render_border_hook);
+    safe_unhook(render_border2_hook);
+    safe_unhook(blur_optimizations_hook);
+    safe_unhook(should_render_window_hook);
+    safe_unhook(is_solitary_blocked_hook);
 }

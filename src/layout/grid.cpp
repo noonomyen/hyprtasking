@@ -78,7 +78,12 @@ void HTLayoutGrid::refresh_workspace_cache(
     if (ROWS <= 0 || COLS <= 0 || LAYERS <= 0)
         return;
 
-    const auto prior = ws_slot_cache;
+    auto prior = ws_slot_cache;
+    for (WORKSPACEID syn : synthetic_ids) {
+        if (State::workspaceState()->query().id(syn).run() == nullptr)
+            prior.erase(syn);
+    }
+    synthetic_ids.clear();
 
     ws_slot_cache.clear();
     slot_ws_cache.clear();
@@ -124,6 +129,10 @@ void HTLayoutGrid::refresh_workspace_cache(
                 place(id, (size_t)idx);
                 return true;
             }
+        }
+        if (id >= 1 && (size_t)(id - 1) < slots.size() && !taken[(size_t)(id - 1)]) {
+            place(id, (size_t)(id - 1));
+            return true;
         }
         const long long idx = next_free_slot(cursor);
         if (idx < 0)
@@ -176,8 +185,8 @@ void HTLayoutGrid::refresh_workspace_cache(
         place_with_prior(rule->m_workspaceId, cursor);
     }
 
-    // Sort by m_id so slot assignment is independent of Hyprland's internal
-    // m_workspaces vector order.
+    // Sort workspaces so active and window-holding workspaces take precedence over empty ones,
+    // and lower IDs take precedence over higher IDs.
     std::vector<PHLWORKSPACE> on_monitor;
     for (const auto& w : State::workspaceState()->workspacesCopy()) {
         if (w == nullptr)
@@ -191,12 +200,19 @@ void HTLayoutGrid::refresh_workspace_cache(
         on_monitor.push_back(w);
     }
     std::sort(on_monitor.begin(), on_monitor.end(),
-              [](const PHLWORKSPACE& a, const PHLWORKSPACE& b) {
+              [&](const PHLWORKSPACE& a, const PHLWORKSPACE& b) {
+                  const bool a_active = (monitor->m_activeWorkspace == a);
+                  const bool b_active = (monitor->m_activeWorkspace == b);
+                  if (a_active != b_active)
+                      return a_active;
+                  const bool a_has_win = (a->getWindowCount() > 0);
+                  const bool b_has_win = (b->getWindowCount() > 0);
+                  if (a_has_win != b_has_win)
+                      return a_has_win;
                   return a->m_id < b->m_id;
               });
-    // Settle workspaces that still have a free prior slot before assigning
-    // anyone via the cursor — otherwise a migrated workspace with no prior
-    // here would steal slot 0 and displace this monitor's resident at (0,0).
+
+    // Settle workspaces with free prior or natural slots before assigning via cursor.
     std::vector<PHLWORKSPACE> needs_cursor;
     for (const auto& w : on_monitor) {
         const auto pit = prior.find(w->m_id);
@@ -206,6 +222,11 @@ void HTLayoutGrid::refresh_workspace_cache(
                 place(w->m_id, (size_t)idx);
                 continue;
             }
+        }
+        const size_t natural_idx = (size_t)(w->m_id - 1);
+        if (w->m_id >= 1 && natural_idx < slots.size() && !taken[natural_idx]) {
+            place(w->m_id, natural_idx);
+            continue;
         }
         needs_cursor.push_back(w);
     }
@@ -228,6 +249,7 @@ void HTLayoutGrid::refresh_workspace_cache(
             continue;
         const WORKSPACEID id = next_synth();
         place(id, i);
+        synthetic_ids.insert(id);
     }
 }
 
@@ -371,6 +393,19 @@ void HTLayoutGrid::close_open_lerp(float perc, std::optional<WORKSPACEID> target
     offset->resetAllCallbacks();
     scale->setValueAndWarp(new_scale);
     offset->setValueAndWarp(new_pos);
+}
+
+float HTLayoutGrid::current_open_perc() {
+    const PHLMONITOR monitor = get_monitor();
+    if (monitor == nullptr || monitor->m_transformedSize.x <= 0)
+        return 0.0f;
+
+    const double open_scale =
+        calculate_ws_box(0, 0, HT_VIEW_OPENED).w / monitor->m_transformedSize.x;
+    if (std::abs(1.0 - open_scale) < 1e-4)
+        return 0.0f;
+
+    return std::clamp((float)((1.0 - scale->value()) / (1.0 - open_scale)), 0.0f, 1.0f);
 }
 
 void HTLayoutGrid::on_show(CallbackFun on_complete) {

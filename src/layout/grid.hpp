@@ -21,6 +21,7 @@ class HTLayoutGrid: public HTLayoutBase {
     // Survives workspace destruction so a slot stays sticky for an empty ws.
     std::unordered_map<WORKSPACEID, HTGridSlot> ws_slot_cache;
     std::unordered_map<long long, WORKSPACEID> slot_ws_cache;
+    std::unordered_set<WORKSPACEID> synthetic_ids;
 
     static long long pack_slot(int layer, int x, int y);
     void set_anim_callback_on_end(CallbackFun on_complete);
@@ -34,6 +35,7 @@ class HTLayoutGrid: public HTLayoutBase {
     virtual CBox calculate_ws_box(int x, int y, HTViewStage stage);
 
     virtual void close_open_lerp(float perc, std::optional<WORKSPACEID> target_ws = std::nullopt);
+    virtual float current_open_perc() override;
     virtual void on_show(CallbackFun on_complete);
     virtual void on_hide(CallbackFun on_complete);
     virtual void on_move(WORKSPACEID old_id, WORKSPACEID new_id, CallbackFun on_complete);

@@ -72,6 +72,16 @@ void HTLayoutLinear::close_open_lerp(float perc, std::optional<WORKSPACEID> targ
     dim_opacity->setValueAndWarp(std::lerp(0.0, 0.4, perc));
 }
 
+float HTLayoutLinear::current_open_perc() {
+    const PHLMONITOR monitor = get_monitor();
+    if (monitor == nullptr)
+        return 0.0f;
+    const float HEIGHT = HTConfig::value<Config::FLOAT>("linear:height") * monitor->m_scale;
+    if (HEIGHT <= 0.0f)
+        return 0.0f;
+    return std::clamp(view_offset->value() / HEIGHT, 0.0f, 1.0f);
+}
+
 void HTLayoutLinear::on_show(CallbackFun on_complete) {
     view_offset->resetAllCallbacks();
 

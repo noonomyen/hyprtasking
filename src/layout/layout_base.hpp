@@ -48,6 +48,7 @@ class HTLayoutBase {
 
     // Warp the show/hide animations to perc (from closed to open)
     virtual void close_open_lerp(float perc, std::optional<WORKSPACEID> target_ws = std::nullopt) = 0;
+    virtual float current_open_perc() { return 0.0f; }
     virtual void on_show(CallbackFun on_complete = nullptr) = 0;
     virtual void on_hide(CallbackFun on_complete = nullptr) = 0;
     virtual void
