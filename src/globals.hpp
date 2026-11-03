@@ -11,6 +11,15 @@
 inline constexpr auto LOG = Hyprutils::CLI::LOG_DEBUG;
 inline constexpr auto ERR = Hyprutils::CLI::LOG_ERR;
 
+inline void ht_log(Hyprutils::CLI::eLogLevel level, const std::string_view str) {
+    Log::logger->log(level, "hyprtasking", str);
+}
+
+template <typename... Args>
+inline void ht_log(Hyprutils::CLI::eLogLevel level, std::format_string<Args...> fmt, Args&&... args) {
+    Log::logger->log(level, "hyprtasking", fmt, std::forward<Args>(args)...);
+}
+
 inline HANDLE PHANDLE = nullptr;
 
 inline CFunctionHook* render_workspace_hook = nullptr;

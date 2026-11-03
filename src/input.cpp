@@ -4,8 +4,10 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/state/GlobalWindowController.hpp>
 #include <hyprland/src/macros.hpp>
-#include <hyprland/src/managers/KeybindManager.hpp>
+#include <hyprland/src/desktop/state/ViewState.hpp>
+#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
+#include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/pointer/PointerManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
@@ -31,7 +33,7 @@ bool HTManager::start_window_drag() {
 
     const Vector2D mouse_coords = g_pInputManager->getMouseCoordsInternal();
     const WORKSPACEID workspace_id = cursor_view->layout->get_ws_id_from_global(mouse_coords);
-    PHLWORKSPACE cursor_workspace = State::workspaceState()->query().id(workspace_id).run();
+    PHLWORKSPACE cursor_workspace = get_workspace_by_id(workspace_id);
 
     // If left click on non-workspace workspace, do nothing
     if (cursor_workspace == nullptr)
@@ -45,7 +47,13 @@ bool HTManager::start_window_drag() {
         + cursor_monitor->m_position;
 
     Pointer::mgr()->warpTo(workspace_coords);
-    g_pKeybindManager->changeMouseBindMode(MBIND_MOVE);
+    if (!g_layoutManager->dragController()->target()) {
+        const auto window = Desktop::viewState()->hitTest().windowAt(
+            workspace_coords, Desktop::View::RESERVED_EXTENTS | Desktop::View::INPUT_EXTENTS | Desktop::View::ALLOW_FLOATING
+        );
+        if (window && (Fullscreen::controller()->isFullscreen(window) || !window->presentation().checkInputOnDecorations(INPUT_TYPE_DRAG_START, workspace_coords)))
+            g_layoutManager->beginDragTarget(window->layoutTarget(), MBIND_MOVE);
+    }
     Pointer::mgr()->warpTo(mouse_coords);
 
     const SP<Layout::ITarget> target = g_layoutManager->dragController()->target();
@@ -86,19 +94,19 @@ bool HTManager::end_window_drag() {
         State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
     const PHTVIEW cursor_view = get_view_from_monitor(cursor_monitor);
     if (cursor_monitor == nullptr || cursor_view == nullptr) {
-        g_pKeybindManager->changeMouseBindMode(MBIND_INVALID);
+        g_layoutManager->endDragTarget();
         return false;
     }
 
     // Required if dragging and dropping from active to inactive
     if (!cursor_view->active || cursor_view->closing) {
-        g_pKeybindManager->changeMouseBindMode(MBIND_INVALID);
+        g_layoutManager->endDragTarget();
         return false;
     }
 
     // For linear layout: if dropping on big workspace, just pass on
     if (!cursor_view->layout->should_manage_mouse()) {
-        g_pKeybindManager->changeMouseBindMode(MBIND_INVALID);
+        g_layoutManager->endDragTarget();
         return false;
     }
 
@@ -110,38 +118,38 @@ bool HTManager::end_window_drag() {
     // from messing up resize on border, but it should be good because above?)
     const PHLWINDOW dragged_window = target->window();
     if (dragged_window == nullptr || g_layoutManager->dragController()->mode() != MBIND_MOVE) {
-        g_pKeybindManager->changeMouseBindMode(MBIND_INVALID);
+        g_layoutManager->endDragTarget();
         return false;
     }
 
     const Vector2D mouse_coords = g_pInputManager->getMouseCoordsInternal();
     Vector2D use_mouse_coords = mouse_coords;
     const WORKSPACEID workspace_id = cursor_view->layout->get_ws_id_from_global(mouse_coords);
-    PHLWORKSPACE cursor_workspace = State::workspaceState()->query().id(workspace_id).run();
+    PHLWORKSPACE cursor_workspace = get_workspace_by_id(workspace_id);
 
     // Release on empty dummy workspace, so create and switch to it
     if (cursor_workspace == nullptr && workspace_id != WORKSPACE_INVALID) {
-        cursor_workspace = State::workspaceState()->create(workspace_id, cursor_monitor->m_id);
+        cursor_workspace = create_workspace_by_id(workspace_id, cursor_monitor);
     } else if (workspace_id == WORKSPACE_INVALID) {
         cursor_workspace = dragged_window->m_workspace;
         // Ensure that the mouse coords are snapped to inside the workspace box itself
-        use_mouse_coords = cursor_view->layout->get_global_ws_box(cursor_workspace->m_id)
+        use_mouse_coords = cursor_view->layout->get_global_ws_box(workspace_to_id(cursor_workspace))
                                .closestPoint(use_mouse_coords);
 
-        Log::logger->log(
+        ht_log(
             LOG,
             "[Hyprtasking] Dragging to invalid position, snapping to last ws {}",
-            cursor_workspace->m_id
+            workspace_to_id(cursor_workspace)
         );
     }
 
     if (cursor_workspace == nullptr) {
-        Log::logger->log(LOG, "[Hyprtasking] tried to drop on null workspace??");
-        g_pKeybindManager->changeMouseBindMode(MBIND_INVALID);
+        ht_log(LOG, "[Hyprtasking] tried to drop on null workspace??");
+        g_layoutManager->endDragTarget();
         return false;
     }
 
-    Log::logger->log(LOG, "[Hyprtasking] trying to drop window on ws {}", cursor_workspace->m_id);
+    ht_log(LOG, "[Hyprtasking] trying to drop window on ws {}", workspace_to_id(cursor_workspace));
 
     // PHLWORKSPACEREF o_workspace = cursor_monitor->m_activeWorkspace;
     cursor_monitor->changeWorkspace(cursor_workspace, true);
@@ -156,24 +164,24 @@ bool HTManager::end_window_drag() {
             (dragged_window->positionAnimation()->value() - use_mouse_coords)
                     * cursor_view->layout->drag_window_scale()
                 + use_mouse_coords,
-            cursor_workspace->m_id
+            workspace_to_id(cursor_workspace)
         ) + cursor_monitor->m_position;
         dragged_window->positionAnimation()->setValueAndWarp(drop_pos);
     }
 
     const Vector2D workspace_coords =
-        cursor_view->layout->global_to_local_ws_unscaled(use_mouse_coords, cursor_workspace->m_id)
+        cursor_view->layout->global_to_local_ws_unscaled(use_mouse_coords, workspace_to_id(cursor_workspace))
         + cursor_monitor->m_position;
 
     Pointer::mgr()->warpTo(workspace_coords);
     g_pInputManager->simulateMouseMovement();
-    g_pKeybindManager->changeMouseBindMode(MBIND_INVALID);
+    g_layoutManager->endDragTarget();
     Pointer::mgr()->warpTo(mouse_coords);
 
     // otherwise the window leaves blur (?) artifacts on all
     // workspaces
-    dragged_window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_TO_WORKSPACE)->setValueAndWarp(1.0);
-    dragged_window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE)->setValueAndWarp(1.0);
+    dragged_window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_TO_WORKSPACE)->setValueAndWarp(1.0);
+    dragged_window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE)->setValueAndWarp(1.0);
 
     // if (o_workspace != nullptr)
     //     cursor_monitor->changeWorkspace(o_workspace.lock(), true);

@@ -129,7 +129,7 @@ void HTLayoutLinear::on_move(WORKSPACEID old_id, WORKSPACEID new_id, CallbackFun
 
     const float GAP_SIZE = HTConfig::value<Config::FLOAT>("gap_size") * monitor->m_scale;
 
-    const PHLWORKSPACE new_ws = State::workspaceState()->query().id(new_id).run();
+    const PHLWORKSPACE new_ws = get_workspace_by_id(new_id);
     if (new_ws == nullptr)
         return;
 
@@ -228,7 +228,7 @@ bool HTLayoutLinear::should_render_window(PHLWINDOW window) {
     if (workspace == nullptr)
         return false;
 
-    CBox window_box = get_global_window_box(window, window->workspaceID());
+    CBox window_box = get_global_window_box(window, window_to_workspace_id(window));
     if (window_box.empty())
         return false;
     if (window_box.intersection(monitor->logicalBox()).empty())
@@ -300,14 +300,16 @@ void HTLayoutLinear::build_overview_layout(HTViewStage stage) {
             continue;
         if (workspace->m_monitor != monitor)
             continue;
-        if (workspace->m_isSpecialWorkspace)
+        if (workspace->type() == Workspace::eWorkspaceType::SPECIAL)
             continue;
-        monitor_workspaces.push_back(workspace->m_id);
+        const auto ws_id = workspace_to_id(workspace);
+        if (ws_id != WORKSPACE_INVALID)
+            monitor_workspaces.push_back(ws_id);
     }
     std::sort(monitor_workspaces.begin(), monitor_workspaces.end());
 
-    WORKSPACEID big_id = monitor_workspaces.back();
-    while (State::workspaceState()->query().id(big_id).run() != nullptr)
+    WORKSPACEID big_id = monitor_workspaces.empty() ? 1 : monitor_workspaces.back();
+    while (get_workspace_by_id(big_id) != nullptr)
         big_id++;
     monitor_workspaces.push_back(big_id);
 
@@ -317,9 +319,9 @@ void HTLayoutLinear::build_overview_layout(HTViewStage stage) {
     }
 }
 
-void HTLayoutLinear::render() {
-    HTLayoutBase::render();
-    CScopeGuard x([this] { post_render(); });
+void HTLayoutLinear::render(Render::CRenderContext& ctx) {
+    HTLayoutBase::render(ctx);
+    CScopeGuard x([this, &ctx] { post_render(ctx); });
 
     const PHTVIEW par_view = ht_manager->get_view_from_id(view_id);
     if (par_view == nullptr)
@@ -341,7 +343,8 @@ void HTLayoutLinear::render() {
 
 
     g_pHyprRenderer->damageMonitor(monitor);
-    g_pHyprRenderer->m_renderData.pMonitor->m_blurFBShouldRender = true;
+    if (ctx.m_data.pMonitor)
+        ctx.m_data.pMonitor->m_blurFBShouldRender = true;
 
     // Do a dance with active workspaces: Hyprland will only properly render the
     // current active one so make the workspace active before rendering it, etc
@@ -352,7 +355,7 @@ void HTLayoutLinear::render() {
         false,
         true
     );
-    start_workspace->m_visible = false;
+    start_workspace->setVisible(false);
 
     const PHLWORKSPACE big_ws = monitor->m_activeWorkspace;
 
@@ -364,13 +367,14 @@ void HTLayoutLinear::render() {
         false,
         true
     );
-    big_ws->m_visible = true;
+    big_ws->setVisible(true);
 
     // use pixel size for geometry
     CBox mon_box = {{0, 0}, monitor->m_pixelSize};
     // Render the current workspace on the screen
     ((render_workspace_t)(render_workspace_hook->m_original))(
         g_pHyprRenderer.get(),
+        ctx,
         monitor,
         big_ws,
         time,
@@ -383,7 +387,7 @@ void HTLayoutLinear::render() {
     blur_data.box = mon_box;
     blur_data.blur = (bool)HTConfig::value<Config::INTEGER>("linear:blur");
     blur_data.blurA = blur_strength->value();
-    g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(blur_data));
+    ctx.m_pass.add(makeUnique<CRectPassElement>(blur_data));
 
     Animation::Workspace::startAnimation(
         start_workspace,
@@ -391,7 +395,7 @@ void HTLayoutLinear::render() {
         false,
         true
     );
-    big_ws->m_visible = false;
+    big_ws->setVisible(false);
     rendering_standard_ws = false;
 
     CBox view_box = {
@@ -402,14 +406,14 @@ void HTLayoutLinear::render() {
     CRectPassElement::SRectData data;
     data.color = CHyprColor {HTConfig::value<Config::INTEGER>("bg_color")}.stripA();
     data.box = view_box;
-    g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(data));
+    ctx.m_pass.add(makeUnique<CRectPassElement>(data));
 
     build_overview_layout(HT_VIEW_ANIMATING);
 
     CBox mon_transformed_box = {{0, 0}, monitor->m_transformedSize};
     for (const auto& [ws_id, ws_layout] : overview_layout) {
         // Could be nullptr, in which we render only layers
-        const PHLWORKSPACE workspace = State::workspaceState()->query().id(ws_id).run();
+        const PHLWORKSPACE workspace = get_workspace_by_id(ws_id);
 
         if (ws_layout.box.intersection(mon_transformed_box).empty())
             continue;
@@ -421,9 +425,9 @@ void HTLayoutLinear::render() {
         data.box = border_box;
         data.grad1 = border_col;
         data.borderSize = BORDERSIZE;
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CBorderPassElement>(data));
+        ctx.m_pass.add(makeUnique<CBorderPassElement>(data));
 
-        render_workspace_at_box(monitor, workspace, time, ws_layout.box);
+        render_workspace_at_box(ctx, monitor, workspace, time, ws_layout.box);
     }
 
     monitor->m_activeWorkspace = start_workspace;
@@ -433,7 +437,7 @@ void HTLayoutLinear::render() {
         false,
         true
     );
-    start_workspace->m_visible = true;
+    start_workspace->setVisible(true);
 
     // Render dragged window at mouse cursor
     const PHTVIEW cursor_view = ht_manager->get_view_from_cursor();
@@ -453,5 +457,5 @@ void HTLayoutLinear::render() {
                                 .scale(cursor_view->layout->drag_window_scale())
                                 .translate(mouse_coords);
     if (!window_box.intersection(monitor->logicalBox()).empty())
-        render_window_at_box(dragged_window, monitor, time, window_box);
+        render_window_at_box(ctx, dragged_window, monitor, time, window_box);
 }
