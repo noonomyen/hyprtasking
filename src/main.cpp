@@ -19,6 +19,7 @@
 #include <hyprland/src/plugins/PluginSystem.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/render/pass/Pass.hpp>
 #include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/config/values/ConfigValues.hpp>
@@ -294,7 +295,7 @@ static void hook_render_workspace(
         return;
     }
     const PHTVIEW view = ht_manager->get_view_from_monitor(monitor);
-    if ((view != nullptr && view->navigating) || ht_manager->has_active_view()) {
+    if (view != nullptr && (view->navigating || view->active)) {
         view->layout->render();
     } else {
         ((render_workspace_t)(render_workspace_hook
@@ -322,13 +323,11 @@ static bool render_modif_scaled() {
 static bool ht_scaled_render() {
     if (ht_manager == nullptr || !render_modif_scaled())
         return false;
-    if (ht_manager->has_active_view())
-        return true;
     const auto monitor = g_pHyprRenderer->m_renderData.pMonitor.lock();
     if (monitor == nullptr)
         return false;
     const PHTVIEW view = ht_manager->get_view_from_monitor(monitor);
-    return view != nullptr && view->navigating;
+    return view != nullptr && (view->active || view->navigating);
 }
 
 // Hyprland applies the active renderModif to a texture's quad, but NOT to any of the
@@ -464,10 +463,10 @@ static bool hook_blur_optimizations(void* thisptr, PHLLS pLayer, PHLWINDOW pWind
 static bool hook_should_render_window(void* thisptr, PHLWINDOW window, PHLMONITOR monitor) {
     bool ori_result =
         ((should_render_window_t)(should_render_window_hook->m_original))(thisptr, window, monitor);
-    if (ht_manager == nullptr || !ht_manager->has_active_view())
+    if (ht_manager == nullptr)
         return ori_result;
     const PHTVIEW view = ht_manager->get_view_from_monitor(monitor);
-    if (view == nullptr)
+    if (view == nullptr || (!view->active && !view->navigating))
         return ori_result;
     return view->layout->should_render_window(window);
 }
@@ -854,24 +853,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 APICALL EXPORT void PLUGIN_EXIT() {
     Log::logger->log(LOG, "[Hyprtasking] Plugin exiting");
 
-    callback_listeners.clear();
-
-    if (ht_manager) {
-        for (auto& view : ht_manager->views) {
-            if (view && view->layout) {
-                view->layout->close_open_lerp(0.0f);
-            }
-            if (view) {
-                view->active = false;
-                view->closing = false;
-                view->navigating = false;
-            }
-        }
-        if (Pointer::Cursor::overrideController)
-            Pointer::Cursor::overrideController->unsetOverride(Pointer::Cursor::CURSOR_OVERRIDE_UNKNOWN);
-        ht_manager.reset();
-    }
-
     auto safe_unhook = [](CFunctionHook*& hook) {
         if (hook) {
             hook->unhook();
@@ -886,4 +867,25 @@ APICALL EXPORT void PLUGIN_EXIT() {
     safe_unhook(blur_optimizations_hook);
     safe_unhook(should_render_window_hook);
     safe_unhook(is_solitary_blocked_hook);
+
+    callback_listeners.clear();
+
+    if (ht_manager) {
+        for (auto& view : ht_manager->views) {
+            if (view && (view->active || view->navigating)) {
+                if (view->layout)
+                    view->layout->close_open_lerp(0.0f);
+                view->active = false;
+                view->closing = false;
+                view->navigating = false;
+            }
+        }
+        if (Pointer::Cursor::overrideController)
+            Pointer::Cursor::overrideController->unsetOverride(Pointer::Cursor::CURSOR_OVERRIDE_UNKNOWN);
+        ht_manager.reset();
+    }
+
+    if (g_pHyprRenderer) {
+        g_pHyprRenderer->m_renderPass.removeAllOfType("HTDisableSimplification");
+    }
 }

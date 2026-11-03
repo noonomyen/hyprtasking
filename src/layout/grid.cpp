@@ -585,9 +585,6 @@ void HTLayoutGrid::build_overview_layout(HTViewStage stage) {
     const int ROWS = HTConfig::value<Config::INTEGER>("grid:rows");
     const int COLS = HTConfig::value<Config::INTEGER>("grid:cols");
 
-    const PHLMONITOR last_monitor = Desktop::focusState()->monitor();
-    Desktop::focusState()->rawMonitorFocus(monitor);
-
     overview_layout.clear();
     for (int y = 0; y < ROWS; y++) {
         for (int x = 0; x < COLS; x++) {
@@ -599,9 +596,6 @@ void HTLayoutGrid::build_overview_layout(HTViewStage stage) {
             overview_layout[ws_id] = HTWorkspace {x, y, ws_box};
         }
     }
-
-    if (last_monitor != nullptr)
-        Desktop::focusState()->rawMonitorFocus(last_monitor);
 }
 
 // Render each visible workspace directly into its grid tile via a scaled
@@ -648,12 +642,12 @@ void HTLayoutGrid::render() {
     );
     start_workspace->m_visible = false;
 
-    CBox global_mon_box = {monitor->m_position, monitor->m_transformedSize};
+    CBox mon_box = {{0, 0}, monitor->m_transformedSize};
     const auto tile_visible = [&](const CBox& box) {
         if (box.width < 0.01 || box.height < 0.01)
             return false;
-        CBox global_box = {box.pos() + monitor->m_position, box.size()};
-        return !global_box.expand(BORDERSIZE).intersection(global_mon_box).empty();
+        CBox b = box;
+        return !b.expand(BORDERSIZE).intersection(mon_box).empty();
     };
 
     // Borders first, so window contents render on top of them. Workspace contents now

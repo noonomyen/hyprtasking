@@ -406,13 +406,12 @@ void HTLayoutLinear::render() {
 
     build_overview_layout(HT_VIEW_ANIMATING);
 
-    CBox global_mon_box = {monitor->m_position, monitor->m_transformedSize};
+    CBox mon_transformed_box = {{0, 0}, monitor->m_transformedSize};
     for (const auto& [ws_id, ws_layout] : overview_layout) {
         // Could be nullptr, in which we render only layers
         const PHLWORKSPACE workspace = State::workspaceState()->query().id(ws_id).run();
 
-        CBox global_box = {ws_layout.box.pos() + monitor->m_position, ws_layout.box.size()};
-        if (global_box.intersection(global_mon_box).empty())
+        if (ws_layout.box.intersection(mon_transformed_box).empty())
             continue;
 
         const Config::CGradientValueData border_col = workspace == big_ws ? *ACTIVECOL : *INACTIVECOL;
